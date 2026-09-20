@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+settings.json
+out/
+샘플 영상/
