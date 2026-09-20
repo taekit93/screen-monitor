@@ -1,0 +1,5 @@
+# cmd 는 LF 줄바꿈 .bat 의 여러 줄 if 블록을 제대로 못 읽는다. 항상 CRLF 로.
+*.bat text eol=crlf
+*.py  text eol=lf
+*.md  text eol=lf
+*.wav binary

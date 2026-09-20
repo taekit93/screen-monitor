@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
@@ -28,6 +29,7 @@ from notifier import CHAR_WAV, RUNE_WAV, Notifier, ensure_all
 from region_select import ImagePicker, select_region
 from watch import CharWatch, RuneWatch, inside
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT = ("맑은 고딕", 9)
 GREEN, YELLOW, BLUE, RED = (0, 255, 0), (0, 220, 255), (255, 160, 60), (0, 80, 255)
 
@@ -730,9 +732,33 @@ class App(tk.Tk):
         self.log.configure(state="disabled")
 
 
+def _report_crash() -> None:
+    """pythonw 로 띄우면 오류가 아무 데도 안 나온다. 파일로 남기고 창으로 알린다."""
+    import traceback
+
+    text = traceback.format_exc()
+    try:
+        with open(os.path.join(APP_DIR, "error.log"), "a", encoding="utf-8") as f:
+            stamp = time.strftime("=== %Y-%m-%d %H:%M:%S ===")
+            f.write(stamp + "\n" + text + "\n")
+    except Exception:
+        pass
+    try:
+        last = text.strip().splitlines()[-1]
+        messagebox.showerror(
+            "실행하지 못했습니다",
+            last + "\n\n자세한 내용을 프로그램 폴더의 error.log 에 저장했습니다.")
+    except Exception:
+        pass
+
+
 def main() -> None:
-    enable_dpi_awareness()
-    App().mainloop()
+    try:
+        enable_dpi_awareness()
+        App().mainloop()
+    except Exception:
+        _report_crash()
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
