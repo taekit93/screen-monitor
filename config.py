@@ -24,12 +24,15 @@ CONFIG_PATH = os.path.join(APP_DIR, "settings.json")
 # 기본 색 조건 — 샘플 영상 2편(합계 3시간 40분)을 전부 돌려 가며 맞춘 값
 # --------------------------------------------------------------------------- #
 # 룬은 흰 테두리가 뚜렷해서 white_ratio 가 오탐을 거의 다 걸러 준다.
+# 0.20 은 샘플 영상 3편으로 맞춘 값이다. 밝은 맵(잔잔한 해안가)에서는 미니맵
+# 지형의 보라 얼룩이 옆 아이콘의 흰 테두리를 빌려 0.16 까지 올라오는데,
+# 0.20 이면 그건 걸러지면서 진짜 룬 17곳은 하나도 안 놓친다.
 RUNE_RULE = dict(
     h_min=135, h_max=155, s_min=90, s_max=255, v_min=150, v_max=255,
     min_area=18, max_area=250, min_side=4, max_side=22, max_aspect=1.6,
     fill_min=0.40, fill_max=1.0,
     border_ratio=0.15, border_s_max=100, border_v_min=140,
-    white_ratio=0.12, white_s_max=60, white_v_min=185, min_count=1)
+    white_ratio=0.20, white_s_max=60, white_v_min=185, min_count=1)
 
 # 캐릭터 아이콘은 훨씬 작아서 흰 테두리가 1px 띠에 거의 안 잡힌다
 # (샘플 영상에서 중앙값 0.04). 그래서 white_ratio 는 끄고 밝기만 본다.

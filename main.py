@@ -65,12 +65,10 @@ class Watcher(threading.Thread):
         region = tuple(cfg.region)
         allow = cfg.allow_box()
 
-        rune_rule = cfg.rune() if cfg.rune_on else None
         rune_watch = RuneWatch(cfg.rune_hold, cfg.rune_repeat,
                                cfg.rune_repeat_interval) if cfg.rune_on else None
 
         char_on = bool(cfg.char_on and allow)
-        char_rule = cfg.char() if char_on else None
         char_watch = CharWatch(allow, cfg.char_hold, cfg.char_out_after,
                                cfg.char_lost_after,
                                cfg.char_repeat_interval) if char_on else None
@@ -91,15 +89,27 @@ class Watcher(threading.Thread):
             held: list = []
             me = None
 
+            # 규칙과 시간 조건은 매번 다시 읽는다. 감지를 돌리는 중에 [세부…] 로
+            # 값을 바꿔도 바로 먹히도록 (예전엔 중지했다 다시 시작해야 했다)
             if rune_watch is not None:
-                rune_dets = rune_rule.detect(img)
+                rune_watch.hold = cfg.rune_hold
+                rune_watch.repeat = cfg.rune_repeat
+                rune_watch.repeat_interval = cfg.rune_repeat_interval
+            if char_watch is not None:
+                char_watch.hold = cfg.char_hold
+                char_watch.out_after = cfg.char_out_after
+                char_watch.lost_after = cfg.char_lost_after
+                char_watch.repeat_interval = cfg.char_repeat_interval
+
+            if rune_watch is not None:
+                rune_dets = cfg.rune().detect(img)
                 ev = rune_watch.update(rune_dets, now)
                 held = rune_watch.held
                 if ev is not None:
                     self.q.put(("event", ev))
 
             if char_watch is not None:
-                char_dets = char_rule.detect(img)
+                char_dets = cfg.char().detect(img)
                 ev = char_watch.update(char_dets, now)
                 me = char_watch.me
                 if ev is not None:
@@ -599,7 +609,8 @@ class App(tk.Tk):
         self.wait_window(dlg)
         if dlg.result:
             setattr(self.cfg, rule_key, {**getattr(self.cfg, rule_key), **dlg.result})
-            self._log(f"{title} 저장됨")
+            live = " (감지 중이라 바로 적용됩니다)" if self.watcher and                 self.watcher.is_alive() else ""
+            self._log(f"{title} 저장됨{live}")
 
     def on_rune_detail(self) -> None:
         self._detail("rune_rule", "룬 색 조건", "룬 (보라 마름모)")
