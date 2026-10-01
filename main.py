@@ -144,6 +144,8 @@ class RuleDialog(tk.Toplevel):
         ("fill_max", "채움비 최대", 0.0, 1.0, 0.05),
         ("border_ratio", "밝은 테두리 비율", 0.0, 1.0, 0.02),
         ("white_ratio", "흰 테두리 비율", 0.0, 1.0, 0.02),
+        ("ring_scan", "마름모 테두리 최소(0=끔)", 0.0, 1.0, 0.05),
+        ("ring_mean", "마름모 테두리 평균", 0.0, 1.0, 0.05),
     ]
 
     def __init__(self, master, title: str, rule: dict, preset_key: str):

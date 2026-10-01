@@ -15,11 +15,28 @@
   샘플 영상 2편에서 잰 값 (덩어리 단위, 진짜 572개 / 가짜 41개)
     3번 밝은 테두리 0.28 이상 → 진짜 74.5% 통과, 가짜 48.8% 통과
     4번 흰 테두리  0.12 이상 → 진짜 79.0% 통과, 가짜  0.0% 통과
+
+여기에 **마름모 테두리 훑기**(ring_scan)를 하나 더 얹었다. 위 규칙이 못 잡는
+두 경우를 위해서다.
+
+  - 룬이 보라 지형에 붙어 있을 때. 둘이 한 덩어리로 잡혀 크기/비율에서 떨어진다.
+  - 미니맵이 작고 영상이 압축될 때. 색 정보가 2x2 로 뭉개져서 흰 테두리가
+    회색(채도 40~90, 밝기 130~170)으로 번진다. '진짜 흰색' 이 거의 안 남는다.
+
+덩어리를 보지 않고, 보라 픽셀 하나하나를 중심으로 삼아 '이 점이 룬의 한가운데라면
+마름모 테두리 자리가 밝은가' 를 반지름별로 잰다. 테두리는 네 변으로 나눠
+**가장 어두운 변**을 점수로 쓴다. 지형 얼룩은 한두 변만 밝아서 여기서 떨어지고,
+룬은 지형 위에 그려지므로 붙어 있어도 네 변이 다 산다.
+
+  카르시온 영상 8편(1시간 37분, 룬 10개, 그중 4개가 보라 지형 위)
+    기존 규칙만      룬 0개, 사냥터 오탐 0
+    + 마름모 훑기    룬 10개, 사냥터 오탐 0
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Tuple
 
 import cv2
@@ -71,9 +88,16 @@ class IconRule:
 
     min_count: int = 1           # 이 개수 이상 찾으면 조건 성립
 
+    # 마름모 테두리 훑기 (모듈 설명 참고). ring_scan 이 0 이면 하지 않는다.
+    ring_scan: float = 0.0       # 네 변 중 가장 어두운 변의 밝은 픽셀 비율 하한
+    ring_mean: float = 0.4       # 네 변 평균 하한
+    ring_s_max: int = 90         # 테두리로 볼 채도 상한 (압축된 회색 테두리까지)
+    ring_v_min: int = 120        # 테두리로 볼 밝기 하한
+    ring_r_min: int = 2          # 훑어 볼 마름모 반지름(px) 범위
+    ring_r_max: int = 10
+
     # ------------------------------------------------------------------ #
-    def build_mask(self, bgr: np.ndarray) -> np.ndarray:
-        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    def color_mask(self, hsv: np.ndarray) -> np.ndarray:
         lo_s, hi_s = int(self.s_min), int(self.s_max)
         lo_v, hi_v = int(self.v_min), int(self.v_max)
         if self.h_min <= self.h_max:
@@ -84,11 +108,26 @@ class IconRule:
             m1 = cv2.inRange(hsv, (int(self.h_min), lo_s, lo_v), (179, hi_s, hi_v))
             m2 = cv2.inRange(hsv, (0, lo_s, lo_v), (int(self.h_max), hi_s, hi_v))
             mask = cv2.bitwise_or(m1, m2)
+        return mask
+
+    def build_mask(self, bgr: np.ndarray) -> np.ndarray:
+        mask = self.color_mask(cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV))
         return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
 
     def detect(self, bgr: np.ndarray) -> List[Detection]:
-        mask = self.build_mask(bgr)
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        found = self._detect_blobs(hsv)
+        if self.ring_scan > 0:
+            for d in self._scan_rings(hsv):
+                cx, cy = d.center
+                if all(max(abs(cx - f.center[0]), abs(cy - f.center[1])) > 4
+                       for f in found):
+                    found.append(d)
+        return found
+
+    def _detect_blobs(self, hsv: np.ndarray) -> List[Detection]:
+        mask = cv2.morphologyEx(self.color_mask(hsv), cv2.MORPH_CLOSE,
+                                np.ones((3, 3), np.uint8))
         S, V = hsv[..., 1], hsv[..., 2]
         bright = (S < self.border_s_max) & (V > self.border_v_min)
         white = (S < self.white_s_max) & (V > self.white_v_min)
@@ -121,6 +160,45 @@ class IconRule:
                                    round(ring, 3), round(wr, 3)))
         return found
 
+    def _scan_rings(self, hsv: np.ndarray) -> List[Detection]:
+        """보라 픽셀마다 '여기가 룬 한가운데라면' 하고 마름모 테두리를 재 본다.
+
+        반지름 r 마다
+          core  중심에서 r-2 안쪽 마름모가 아이콘 색으로 절반 이상 차 있는가
+          ring  r~r+1 마름모 띠의 네 변에서 각각 밝은(테두리) 픽셀 비율
+        네 변 중 가장 낮은 값이 가장 큰 r 을 그 점의 점수로 삼고,
+        5x5 안에서 가장 높은 점만 남긴다.
+        """
+        color = (self.color_mask(hsv) > 0).astype(np.float32)
+        S, V = hsv[..., 1], hsv[..., 2]
+        light = ((S < self.ring_s_max) & (V > self.ring_v_min)).astype(np.float32)
+        light *= 1.0 - color        # 아이콘 색 자체는 테두리로 치지 않는다
+
+        best = np.zeros(color.shape, np.float32)
+        best_mean = np.zeros_like(best)
+        best_r = np.zeros(color.shape, np.int32)
+        for r in range(max(1, int(self.ring_r_min)), int(self.ring_r_max) + 1):
+            k_core, k_sides = _diamond_kernels(r)
+            core = _filt(color, k_core)
+            sides = np.stack([_filt(light, k) for k in k_sides])
+            ok = (core >= 0.5) & (color > 0)
+            lo = np.where(ok, sides.min(0), 0)
+            better = lo > best
+            best[better] = lo[better]
+            best_mean[better] = sides.mean(0)[better]
+            best_r[better] = r
+
+        peak = best >= cv2.dilate(best, np.ones((5, 5), np.uint8))
+        ys, xs = np.where(peak & (best >= self.ring_scan) &
+                          (best_mean >= self.ring_mean))
+        out: List[Detection] = []
+        for x, y in zip(xs.tolist(), ys.tolist()):
+            r = int(best_r[y, x])
+            out.append(Detection(x - r, y - r, 2 * r + 1, 2 * r + 1, 0.0,
+                                 round(float(best_mean[y, x]), 3),
+                                 round(float(best[y, x]), 3)))
+        return out
+
     # ------------------------------------------------------------------ #
     @staticmethod
     def _ring_ratio(bright, x, y, w, h, img_w, img_h) -> float:
@@ -148,6 +226,25 @@ class IconRule:
         band = (grown > 0) & (comp == 0)
         n = int(band.sum())
         return float(white[y0:y1, x0:x1][band].sum()) / n if n else 0.0
+
+
+@lru_cache(maxsize=None)
+def _diamond_kernels(r: int):
+    """반지름 r 마름모의 안쪽(core) 커널과, r~r+1 띠를 네 변으로 나눈 커널 4개."""
+    R = r + 1
+    yy, xx = np.mgrid[-R:R + 1, -R:R + 1]
+    d = np.abs(xx) + np.abs(yy)
+    band = (d >= r) & (d <= r + 1)
+    core = (d <= max(0, r - 2)).astype(np.float32)
+    sides = [band & (yy < 0) & (xx >= 0), band & (yy <= 0) & (xx < 0),
+             band & (yy > 0) & (xx <= 0), band & (yy >= 0) & (xx > 0)]
+    norm = lambda k: k.astype(np.float32) / float(k.sum())
+    return norm(core), tuple(norm(k) for k in sides)
+
+
+def _filt(img: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+    # 화면 밖은 0 으로 본다 (가장자리 아이콘이 테두리를 '빌려 오지' 않도록)
+    return cv2.filter2D(img, -1, kernel, borderType=cv2.BORDER_CONSTANT)
 
 
 def draw_boxes(bgr: np.ndarray, dets: List[Detection],

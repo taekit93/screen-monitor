@@ -27,12 +27,19 @@ CONFIG_PATH = os.path.join(APP_DIR, "settings.json")
 # 0.20 은 샘플 영상 3편으로 맞춘 값이다. 밝은 맵(잔잔한 해안가)에서는 미니맵
 # 지형의 보라 얼룩이 옆 아이콘의 흰 테두리를 빌려 0.16 까지 올라오는데,
 # 0.20 이면 그건 걸러지면서 진짜 룬 17곳은 하나도 안 놓친다.
+#
+# 위 규칙은 룬이 보라 지형에 붙어 한 덩어리가 되면(크기·비율에서 탈락), 또
+# 미니맵이 작아 흰 테두리가 회색으로 번지면 못 잡는다. 그래서 마름모 테두리
+# 훑기(ring_*)를 같이 켠다. 카르시온 영상 8편으로 맞췄고, 네 변 최소 0.15~0.35
+# · 평균 0.3~0.5 어디를 골라도 룬 10개 전부 + 사냥터 오탐 0 이라 그 가운데를 썼다.
 RUNE_RULE = dict(
     h_min=135, h_max=155, s_min=90, s_max=255, v_min=150, v_max=255,
     min_area=18, max_area=250, min_side=4, max_side=22, max_aspect=1.6,
     fill_min=0.40, fill_max=1.0,
     border_ratio=0.15, border_s_max=100, border_v_min=140,
-    white_ratio=0.20, white_s_max=60, white_v_min=185, min_count=1)
+    white_ratio=0.20, white_s_max=60, white_v_min=185, min_count=1,
+    ring_scan=0.25, ring_mean=0.40, ring_s_max=90, ring_v_min=120,
+    ring_r_min=2, ring_r_max=10)
 
 # 캐릭터 아이콘은 훨씬 작아서 흰 테두리가 1px 띠에 거의 안 잡힌다
 # (샘플 영상에서 중앙값 0.04). 그래서 white_ratio 는 끄고 밝기만 본다.
@@ -41,7 +48,8 @@ CHAR_RULE = dict(
     min_area=12, max_area=250, min_side=3, max_side=22, max_aspect=1.6,
     fill_min=0.40, fill_max=1.0,
     border_ratio=0.20, border_s_max=100, border_v_min=140,
-    white_ratio=0.0, white_s_max=60, white_v_min=185, min_count=1)
+    white_ratio=0.0, white_s_max=60, white_v_min=185, min_count=1,
+    ring_scan=0.0)
 
 PRESETS = {
     "룬 (보라 마름모)": RUNE_RULE,
